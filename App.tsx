@@ -19,11 +19,13 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { Frames01SequenceAnimatedSprite } from './Frames01SequenceAnimatedSprite';
-import { Frames3SequenceAnimatedSprite } from './Frames3SequenceAnimatedSprite';
-import { HumanPngSequenceAnimatedSprite } from './HumanPngSequenceAnimatedSprite';
+import { SequenceAnimatedSprite } from './SequenceAnimatedSprite';
+import { FRAMES01 } from './frames01/frames';
+import { FRAMES3 } from './frames3/frames';
+import { HUMAN_FRAMES } from './human_png/frames';
+import { ANHDADEN_FRAMES } from './anhdaden/frames';
 
-type CharacterId = 'frames3' | 'frames01' | 'human';
+type CharacterId = 'frames3' | 'frames01' | 'human' | 'anhdaden';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -45,6 +47,21 @@ function AppContent() {
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Faster frame rate for a more "talking" feel.
   const speed = 60;
+
+  const selectedFrames = useMemo(() => {
+    switch (characterId) {
+      case 'frames3':
+        return FRAMES3;
+      case 'frames01':
+        return FRAMES01;
+      case 'human':
+        return HUMAN_FRAMES;
+      case 'anhdaden':
+        return ANHDADEN_FRAMES;
+      default:
+        return FRAMES3;
+    }
+  }, [characterId]);
 
   const clearAutoStopTimer = useCallback(() => {
     if (autoStopTimerRef.current) {
@@ -94,6 +111,8 @@ function AppContent() {
         return 'Nhân vật 2';
       case 'human':
         return 'Human';
+      case 'anhdaden':
+        return 'Anh da den';
       default:
         return 'Nhân vật';
     }
@@ -165,6 +184,23 @@ function AppContent() {
                 Human
               </Text>
             </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onSelectCharacter('anhdaden')}
+              style={[
+                styles.characterButton,
+                characterId === 'anhdaden' && styles.characterButtonActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.characterButtonText,
+                  characterId === 'anhdaden' && styles.characterButtonTextActive,
+                ]}
+              >
+                AnhDD
+              </Text>
+            </Pressable>
           </View>
         </View>
 
@@ -182,28 +218,14 @@ function AppContent() {
         </Pressable>
 
         <View style={styles.stage}>
-          {characterId === 'frames3' ? (
-            <Frames3SequenceAnimatedSprite
-              isPlaying={isTalking}
-              speed={speed}
-              timedStopNonce={timedStopNonce}
-              style={styles.cat}
-            />
-          ) : characterId === 'frames01' ? (
-            <Frames01SequenceAnimatedSprite
-              isPlaying={isTalking}
-              speed={speed}
-              timedStopNonce={timedStopNonce}
-              style={styles.cat}
-            />
-          ) : (
-            <HumanPngSequenceAnimatedSprite
-              isPlaying={isTalking}
-              speed={speed}
-              timedStopNonce={timedStopNonce}
-              style={styles.cat}
-            />
-          )}
+          <SequenceAnimatedSprite
+            isPlaying={isTalking}
+            frames={selectedFrames}
+            frameMs={speed}
+            timedStopNonce={timedStopNonce}
+            style={styles.cat}
+            stopMode="finishLoopThenFirst"
+          />
         </View>
       </View>
 
