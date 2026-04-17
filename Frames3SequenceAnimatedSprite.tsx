@@ -1,25 +1,8 @@
-import React, { memo, useMemo } from 'react';
-import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
-import AnimatedSprite from 'react-native-animated-sprite';
+import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { FRAMES3 } from './frames3/frames';
 
-type Sprite = {
-  name: string;
-  size: { width: number; height: number };
-  animationTypes: string[];
-  frames: typeof FRAMES3;
-  animationIndex: (type: string) => number[];
-};
-
 const SOURCE_SIZE = { width: 1920, height: 1080 } as const;
-
-const SEQUENCE_SPRITE_3: Sprite = {
-  name: 'frames3-sequence',
-  size: SOURCE_SIZE,
-  animationTypes: ['PLAY'],
-  frames: FRAMES3,
-  animationIndex: () => Array.from({ length: FRAMES3.length }, (_, i) => i),
-};
 
 export type Frames3SequenceAnimatedSpriteProps = {
   isPlaying: boolean;
@@ -36,9 +19,12 @@ function Frames3SequenceAnimatedSpriteImpl({
   speed = 60,
   style,
 }: Frames3SequenceAnimatedSpriteProps) {
-  const fps = useMemo(() => {
-    const frameMs = Number.isFinite(speed) && speed > 0 ? speed : 60;
-    return 1000 / frameMs;
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [frame, setFrame] = useState(0);
+
+  const frameMs = useMemo(() => {
+    const ms = Number.isFinite(speed) && speed > 0 ? speed : 60;
+    return ms;
   }, [speed]);
 
   const size = useMemo(() => {
@@ -47,26 +33,38 @@ function Frames3SequenceAnimatedSpriteImpl({
     return { width, height };
   }, []);
 
-  const sequence = useMemo(
-    () => Array.from({ length: FRAMES3.length }, (_, i) => i),
-    [],
-  );
+  useEffect(() => {
+    setFrame(prev => prev % FRAMES3.length);
+  }, []);
 
-  const key = `${isPlaying ? 'play' : 'idle'}:${fps.toFixed(4)}`;
+  useEffect(() => {
+    if (!isPlaying) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
+    intervalRef.current = setInterval(() => {
+      setFrame(prev => (prev + 1) % FRAMES3.length);
+    }, frameMs);
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [frameMs, isPlaying]);
 
   return (
     <View style={[styles.container, style]} collapsable={false}>
       <View style={[styles.stage, size]}>
-        <AnimatedSprite
-          key={key}
-          sprite={SEQUENCE_SPRITE_3}
-          animationFrameIndex={sequence}
-          loopAnimation={isPlaying}
-          fps={fps}
-          coordinates={{ top: 0, left: 0 }}
-          size={size}
-          draggable={false}
-          visible
+        <Image
+          source={FRAMES3[Math.min(frame, FRAMES3.length - 1)]}
+          style={size}
+          resizeMode="contain"
         />
       </View>
     </View>

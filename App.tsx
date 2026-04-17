@@ -18,10 +18,8 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { FramesSequenceAnimatedSprite } from './FramesSequenceAnimatedSprite';
 import { Frames01SequenceAnimatedSprite } from './Frames01SequenceAnimatedSprite';
 import { Frames3SequenceAnimatedSprite } from './Frames3SequenceAnimatedSprite';
-import { TalkingCatAnimatedSprite } from './TalkingCatAnimatedSprite';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
