@@ -5,12 +5,13 @@
  * @format
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from 'react-native';
@@ -20,6 +21,9 @@ import {
 } from 'react-native-safe-area-context';
 import { Frames01SequenceAnimatedSprite } from './Frames01SequenceAnimatedSprite';
 import { Frames3SequenceAnimatedSprite } from './Frames3SequenceAnimatedSprite';
+import { HumanPngSequenceAnimatedSprite } from './HumanPngSequenceAnimatedSprite';
+
+type CharacterId = 'frames3' | 'frames01' | 'human';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -35,77 +39,256 @@ function App() {
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
   const [isTalking, setIsTalking] = useState(false);
+  const [characterId, setCharacterId] = useState<CharacterId>('frames3');
+  const [secondsText, setSecondsText] = useState('');
+  const [timedStopNonce, setTimedStopNonce] = useState(0);
+  const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Faster frame rate for a more "talking" feel.
   const speed = 60;
 
-  const onToggleTalking = useCallback(() => {
-    setIsTalking(prev => !prev);
+  const clearAutoStopTimer = useCallback(() => {
+    if (autoStopTimerRef.current) {
+      clearTimeout(autoStopTimerRef.current);
+      autoStopTimerRef.current = null;
+    }
   }, []);
+
+  useEffect(() => () => clearAutoStopTimer(), [clearAutoStopTimer]);
+
+  const onToggleTalking = useCallback(() => {
+    if (isTalking) {
+      clearAutoStopTimer();
+      setIsTalking(false);
+      return;
+    }
+
+    clearAutoStopTimer();
+    setIsTalking(true);
+
+    const normalized = secondsText.trim().replace(',', '.');
+    const seconds = parseFloat(normalized);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      autoStopTimerRef.current = setTimeout(() => {
+        autoStopTimerRef.current = null;
+        setTimedStopNonce(n => n + 1);
+        setIsTalking(false);
+      }, Math.round(seconds * 1000));
+    }
+  }, [isTalking, secondsText, clearAutoStopTimer]);
+
+  const onSelectCharacter = useCallback(
+    (next: CharacterId) => {
+      if (next === characterId) return;
+      clearAutoStopTimer();
+      setIsTalking(false);
+      setCharacterId(next);
+    },
+    [characterId, clearAutoStopTimer],
+  );
+
+  const characterLabel = useMemo(() => {
+    switch (characterId) {
+      case 'frames3':
+        return 'Nhân vật 1';
+      case 'frames01':
+        return 'Nhân vật 2';
+      case 'human':
+        return 'Human';
+      default:
+        return 'Nhân vật';
+    }
+  }, [characterId]);
 
   const topPad = useMemo(() => ({ paddingTop: safeAreaInsets.top }), [
     safeAreaInsets.top,
   ]);
 
+  const bottomPad = useMemo(
+    () => ({ paddingBottom: Math.max(safeAreaInsets.bottom, 12) }),
+    [safeAreaInsets.bottom],
+  );
+
   return (
-    <View style={[styles.container, topPad]}>
-      <Pressable
-        accessibilityRole="button"
-        onPress={onToggleTalking}
-        style={({ pressed }) => [
-          styles.button,
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={styles.buttonText}>
-          {isTalking ? 'Stop talking' : 'Start talking'}
-        </Text>
-      </Pressable>
+    <View style={[styles.root, topPad]}>
+      <View style={styles.main}>
+        <View style={styles.characterBar}>
+          <Text style={styles.characterTitle}>Đang chọn: {characterLabel}</Text>
+          <View style={styles.characterButtons}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onSelectCharacter('frames3')}
+              style={[
+                styles.characterButton,
+                characterId === 'frames3' && styles.characterButtonActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.characterButtonText,
+                  characterId === 'frames3' && styles.characterButtonTextActive,
+                ]}
+              >
+                NV1
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onSelectCharacter('frames01')}
+              style={[
+                styles.characterButton,
+                characterId === 'frames01' && styles.characterButtonActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.characterButtonText,
+                  characterId === 'frames01' && styles.characterButtonTextActive,
+                ]}
+              >
+                NV2
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onSelectCharacter('human')}
+              style={[
+                styles.characterButton,
+                characterId === 'human' && styles.characterButtonActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.characterButtonText,
+                  characterId === 'human' && styles.characterButtonTextActive,
+                ]}
+              >
+                Human
+              </Text>
+            </Pressable>
+          </View>
+        </View>
 
-      {/* <View style={styles.stage}>
-        <Text style={styles.title}>frames/ (sequential)</Text>
-        <FramesSequenceAnimatedSprite
-          isPlaying={isTalking}
-          speed={speed}
-          style={styles.cat}
-        />
-        <Text style={styles.caption}>
-          frames folder (1 → 27, no random, speed {speed}ms)
-        </Text>
-      </View> */}
+        <Pressable
+          accessibilityRole="button"
+          onPress={onToggleTalking}
+          style={({ pressed }) => [
+            styles.button,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.buttonText}>
+            {isTalking ? 'Stop talking' : 'Start talking'}
+          </Text>
+        </Pressable>
 
-      <View style={styles.stage}>
-        {/* <Text style={styles.title}>frames01/ (sequential)</Text> */}
-        <Frames01SequenceAnimatedSprite
-          isPlaying={isTalking}
-          speed={speed}
-          style={styles.cat}
-        />
-        {/* <Text style={styles.caption}>
-          frames01 folder (1 → 81, no random, speed {speed}ms)
-        </Text> */}
+        <View style={styles.stage}>
+          {characterId === 'frames3' ? (
+            <Frames3SequenceAnimatedSprite
+              isPlaying={isTalking}
+              speed={speed}
+              timedStopNonce={timedStopNonce}
+              style={styles.cat}
+            />
+          ) : characterId === 'frames01' ? (
+            <Frames01SequenceAnimatedSprite
+              isPlaying={isTalking}
+              speed={speed}
+              timedStopNonce={timedStopNonce}
+              style={styles.cat}
+            />
+          ) : (
+            <HumanPngSequenceAnimatedSprite
+              isPlaying={isTalking}
+              speed={speed}
+              timedStopNonce={timedStopNonce}
+              style={styles.cat}
+            />
+          )}
+        </View>
       </View>
 
-      <View style={styles.stage}>
-        {/* <Text style={styles.title}>frames3/ (sequential)</Text> */}
-        <Frames3SequenceAnimatedSprite
-          isPlaying={isTalking}
-          speed={speed}
-          style={styles.cat}
+      <View style={[styles.inputBar, bottomPad]}>
+        <Text style={styles.inputLabel}>Số giây (để trống = chỉ dừng bằng nút)</Text>
+        <TextInput
+          accessibilityLabel="Số giây chạy animation"
+          editable={!isTalking}
+          keyboardType="decimal-pad"
+          onChangeText={setSecondsText}
+          placeholder="Ví dụ: 3"
+          placeholderTextColor="#9CA3AF"
+          style={styles.input}
+          value={secondsText}
         />
-        {/* <Text style={styles.caption}>
-          frames3 folder (1 → 88, no random, speed {speed}ms)
-        </Text> */}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  main: {
     flex: 1,
     justifyContent: 'center',
-    paddingHorizontal: 20,
     gap: 16,
+  },
+  characterBar: {
+    alignSelf: 'stretch',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  characterTitle: {
+    alignSelf: 'center',
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '600',
+  },
+  characterButtons: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  characterButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+  },
+  characterButtonActive: {
+    borderColor: '#111827',
+    backgroundColor: '#111827',
+  },
+  characterButtonText: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  characterButtonTextActive: {
+    color: '#FFFFFF',
+  },
+  inputBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 12,
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 13,
+    color: '#374151',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
   },
   stage: {
     alignItems: 'center',

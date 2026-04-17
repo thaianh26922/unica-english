@@ -1,16 +1,10 @@
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  Image,
-  StyleProp,
-  StyleSheet,
-  View,
-  ViewStyle,
-} from 'react-native';
-import { FRAMES3 } from './frames3/frames';
+import { Image, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { HUMAN_FRAMES } from './human_png/frames';
 
 const SOURCE_SIZE = { width: 1920, height: 1080 } as const;
 
-export type Frames3SequenceAnimatedSpriteProps = {
+export type HumanPngSequenceAnimatedSpriteProps = {
   isPlaying: boolean;
   /**
    * Frame duration in ms.
@@ -26,16 +20,16 @@ export type Frames3SequenceAnimatedSpriteProps = {
   timedStopNonce?: number;
 };
 
-function Frames3SequenceAnimatedSpriteImpl({
+function HumanPngSequenceAnimatedSpriteImpl({
   isPlaying,
   speed = 60,
   style,
   timedStopNonce = 0,
-}: Frames3SequenceAnimatedSpriteProps) {
+}: HumanPngSequenceAnimatedSpriteProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastTimedStopNonce = useRef(0);
-  const [frame, setFrame] = useState(0);
   const finishLoopRequestedRef = useRef(false);
+  const [frame, setFrame] = useState(0);
 
   const frameMs = useMemo(() => {
     const ms = Number.isFinite(speed) && speed > 0 ? speed : 60;
@@ -49,7 +43,7 @@ function Frames3SequenceAnimatedSpriteImpl({
   }, []);
 
   useEffect(() => {
-    setFrame(prev => prev % FRAMES3.length);
+    setFrame(prev => prev % HUMAN_FRAMES.length);
   }, []);
 
   useEffect(() => {
@@ -66,7 +60,7 @@ function Frames3SequenceAnimatedSpriteImpl({
     }
 
     intervalRef.current = setInterval(() => {
-      setFrame(prev => (prev + 1) % FRAMES3.length);
+      setFrame(prev => (prev + 1) % HUMAN_FRAMES.length);
     }, frameMs);
 
     return () => {
@@ -89,11 +83,15 @@ function Frames3SequenceAnimatedSpriteImpl({
     if (!intervalRef.current) {
       intervalRef.current = setInterval(() => {
         setFrame(prev => {
-          const len = FRAMES3.length;
+          const len = HUMAN_FRAMES.length;
           const safePrev = prev % len;
           const next = (safePrev + 1) % len;
 
-          if (finishLoopRequestedRef.current && safePrev === len - 1 && next === 0) {
+          if (
+            finishLoopRequestedRef.current &&
+            safePrev === len - 1 &&
+            next === 0
+          ) {
             finishLoopRequestedRef.current = false;
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
@@ -108,13 +106,13 @@ function Frames3SequenceAnimatedSpriteImpl({
     }
   }, [frameMs, isPlaying, timedStopNonce]);
 
-  const safeFrame = Math.min(frame, FRAMES3.length - 1);
+  const safeFrame = Math.min(frame, HUMAN_FRAMES.length - 1);
 
   return (
     <View style={[styles.container, style]} collapsable={false}>
       <View style={[styles.stage, size]}>
         <Image
-          source={FRAMES3[safeFrame]}
+          source={HUMAN_FRAMES[safeFrame]}
           style={size}
           resizeMode="contain"
         />
@@ -133,5 +131,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export const Frames3SequenceAnimatedSprite = memo(Frames3SequenceAnimatedSpriteImpl);
+export const HumanPngSequenceAnimatedSprite = memo(
+  HumanPngSequenceAnimatedSpriteImpl,
+);
 
