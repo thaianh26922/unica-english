@@ -24,8 +24,27 @@ import { FRAMES01 } from './frames01/frames';
 import { FRAMES3 } from './frames3/frames';
 import { HUMAN_FRAMES } from './human_png/frames';
 import { ANHDADEN_FRAMES } from './anhdaden/frames';
+import { FRAMES5 } from './frames5/frames';
+import { FRAMES6 } from './frames6/frames';
+import { RandomRangeAnimatedSprite } from './RandomRangeAnimatedSprite';
 
-type CharacterId = 'frames3' | 'frames01' | 'human' | 'anhdaden';
+type Character = {
+  id: string;
+  label: string;
+  buttonLabel: string;
+  frames: readonly any[];
+  frameMs: number;
+};
+
+type TabId = 'characters' | 'frames6';
+
+const CHARACTERS: readonly Character[] = [
+  { id: 'frames3', label: 'Nhân vật 1', buttonLabel: 'NV1', frames: FRAMES3, frameMs: 60 },
+  { id: 'frames01', label: 'Nhân vật 2', buttonLabel: 'NV2', frames: FRAMES01, frameMs: 60 },
+  { id: 'human', label: 'Human', buttonLabel: 'Human', frames: HUMAN_FRAMES, frameMs: 60 },
+  { id: 'anhdaden', label: 'Anh da den', buttonLabel: 'AnhDD', frames: ANHDADEN_FRAMES, frameMs: 60 },
+  { id: 'frames5', label: 'Frames5', buttonLabel: 'F5', frames: FRAMES5, frameMs: 60 },
+] as const;
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -40,27 +59,20 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
+  const [tabId, setTabId] = useState<TabId>('characters');
   const [isTalking, setIsTalking] = useState(false);
-  const [characterId, setCharacterId] = useState<CharacterId>('frames3');
+  const [characterId, setCharacterId] = useState<string>(CHARACTERS[0]?.id ?? 'frames3');
   const [secondsText, setSecondsText] = useState('');
   const [timedStopNonce, setTimedStopNonce] = useState(0);
   const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Faster frame rate for a more "talking" feel.
-  const speed = 60;
 
-  const selectedFrames = useMemo(() => {
-    switch (characterId) {
-      case 'frames3':
-        return FRAMES3;
-      case 'frames01':
-        return FRAMES01;
-      case 'human':
-        return HUMAN_FRAMES;
-      case 'anhdaden':
-        return ANHDADEN_FRAMES;
-      default:
-        return FRAMES3;
-    }
+  // Frames6 tab state
+  const [frames6SecondsText, setFrames6SecondsText] = useState('');
+  const [frames6Phase, setFrames6Phase] = useState<'middle' | 'end'>('end');
+  const frames6MiddleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const selectedCharacter = useMemo(() => {
+    return CHARACTERS.find(c => c.id === characterId) ?? CHARACTERS[0];
   }, [characterId]);
 
   const clearAutoStopTimer = useCallback(() => {
@@ -70,7 +82,15 @@ function AppContent() {
     }
   }, []);
 
+  const clearFrames6MiddleTimer = useCallback(() => {
+    if (frames6MiddleTimerRef.current) {
+      clearTimeout(frames6MiddleTimerRef.current);
+      frames6MiddleTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => () => clearAutoStopTimer(), [clearAutoStopTimer]);
+  useEffect(() => () => clearFrames6MiddleTimer(), [clearFrames6MiddleTimer]);
 
   const onToggleTalking = useCallback(() => {
     if (isTalking) {
@@ -93,8 +113,25 @@ function AppContent() {
     }
   }, [isTalking, secondsText, clearAutoStopTimer]);
 
+  const onSubmitFrames6 = useCallback(() => {
+    clearFrames6MiddleTimer();
+
+    const normalized = frames6SecondsText.trim().replace(',', '.');
+    const seconds = parseFloat(normalized);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+      setFrames6Phase('end');
+      return;
+    }
+
+    setFrames6Phase('middle');
+    frames6MiddleTimerRef.current = setTimeout(() => {
+      frames6MiddleTimerRef.current = null;
+      setFrames6Phase('end');
+    }, Math.round(seconds * 1000));
+  }, [clearFrames6MiddleTimer, frames6SecondsText]);
+
   const onSelectCharacter = useCallback(
-    (next: CharacterId) => {
+    (next: string) => {
       if (next === characterId) return;
       clearAutoStopTimer();
       setIsTalking(false);
@@ -103,20 +140,18 @@ function AppContent() {
     [characterId, clearAutoStopTimer],
   );
 
-  const characterLabel = useMemo(() => {
-    switch (characterId) {
-      case 'frames3':
-        return 'Nhân vật 1';
-      case 'frames01':
-        return 'Nhân vật 2';
-      case 'human':
-        return 'Human';
-      case 'anhdaden':
-        return 'Anh da den';
-      default:
-        return 'Nhân vật';
-    }
-  }, [characterId]);
+  const onSelectTab = useCallback(
+    (next: TabId) => {
+      if (next === tabId) return;
+      // Stop everything when switching tabs to avoid orphan timers.
+      clearAutoStopTimer();
+      setIsTalking(false);
+      clearFrames6MiddleTimer();
+      setFrames6Phase('end');
+      setTabId(next);
+    },
+    [clearAutoStopTimer, clearFrames6MiddleTimer, tabId],
+  );
 
   const topPad = useMemo(() => ({ paddingTop: safeAreaInsets.top }), [
     safeAreaInsets.top,
@@ -130,117 +165,171 @@ function AppContent() {
   return (
     <View style={[styles.root, topPad]}>
       <View style={styles.main}>
-        <View style={styles.characterBar}>
-          <Text style={styles.characterTitle}>Đang chọn: {characterLabel}</Text>
-          <View style={styles.characterButtons}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onSelectCharacter('frames3')}
+        <View style={styles.tabBar}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onSelectTab('characters')}
+            style={[
+              styles.tabButton,
+              tabId === 'characters' && styles.tabButtonActive,
+            ]}
+          >
+            <Text
               style={[
-                styles.characterButton,
-                characterId === 'frames3' && styles.characterButtonActive,
+                styles.tabButtonText,
+                tabId === 'characters' && styles.tabButtonTextActive,
               ]}
             >
-              <Text
-                style={[
-                  styles.characterButtonText,
-                  characterId === 'frames3' && styles.characterButtonTextActive,
-                ]}
-              >
-                NV1
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onSelectCharacter('frames01')}
+              Characters
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onSelectTab('frames6')}
+            style={[
+              styles.tabButton,
+              tabId === 'frames6' && styles.tabButtonActive,
+            ]}
+          >
+            <Text
               style={[
-                styles.characterButton,
-                characterId === 'frames01' && styles.characterButtonActive,
+                styles.tabButtonText,
+                tabId === 'frames6' && styles.tabButtonTextActive,
               ]}
             >
-              <Text
-                style={[
-                  styles.characterButtonText,
-                  characterId === 'frames01' && styles.characterButtonTextActive,
-                ]}
-              >
-                NV2
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onSelectCharacter('human')}
-              style={[
-                styles.characterButton,
-                characterId === 'human' && styles.characterButtonActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.characterButtonText,
-                  characterId === 'human' && styles.characterButtonTextActive,
-                ]}
-              >
-                Human
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => onSelectCharacter('anhdaden')}
-              style={[
-                styles.characterButton,
-                characterId === 'anhdaden' && styles.characterButtonActive,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.characterButtonText,
-                  characterId === 'anhdaden' && styles.characterButtonTextActive,
-                ]}
-              >
-                AnhDD
-              </Text>
-            </Pressable>
-          </View>
+              Frames6
+            </Text>
+          </Pressable>
         </View>
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={onToggleTalking}
-          style={({ pressed }) => [
-            styles.button,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={styles.buttonText}>
-            {isTalking ? 'Stop talking' : 'Start talking'}
-          </Text>
-        </Pressable>
+        {tabId === 'characters' ? (
+          <>
+            <View style={styles.characterBar}>
+              <Text style={styles.characterTitle}>
+                Đang chọn: {selectedCharacter?.label ?? 'Nhân vật'}
+              </Text>
+              <View style={styles.characterButtons}>
+                {CHARACTERS.map(c => {
+                  const active = c.id === characterId;
+                  return (
+                    <Pressable
+                      key={c.id}
+                      accessibilityRole="button"
+                      onPress={() => onSelectCharacter(c.id)}
+                      style={[
+                        styles.characterButton,
+                        active && styles.characterButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.characterButtonText,
+                          active && styles.characterButtonTextActive,
+                        ]}
+                      >
+                        {c.buttonLabel}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
 
-        <View style={styles.stage}>
-          <SequenceAnimatedSprite
-            isPlaying={isTalking}
-            frames={selectedFrames}
-            frameMs={speed}
-            timedStopNonce={timedStopNonce}
-            style={styles.cat}
-            stopMode="finishLoopThenFirst"
-          />
-        </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onToggleTalking}
+              style={({ pressed }) => [
+                styles.button,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <Text style={styles.buttonText}>
+                {isTalking ? 'Stop talking' : 'Start talking'}
+              </Text>
+            </Pressable>
+
+            <View style={styles.stage}>
+              <SequenceAnimatedSprite
+                isPlaying={isTalking}
+                frames={selectedCharacter?.frames ?? []}
+                frameMs={selectedCharacter?.frameMs ?? 60}
+                timedStopNonce={timedStopNonce}
+                style={styles.cat}
+                stopMode="finishLoopThenFirst"
+              />
+            </View>
+          </>
+        ) : (
+          <>
+            <Text style={styles.characterTitle}>Frames6 (random)</Text>
+
+            <View style={styles.stage}>
+              <RandomRangeAnimatedSprite
+                isPlaying={tabId === 'frames6'}
+                frames={FRAMES6}
+                frameMs={120}
+                middleRange={{
+                  start: 9,
+                  end: Math.floor(FRAMES6.length * 0.65),
+                }}
+                endRange={{
+                  start: Math.max(0, FRAMES6.length - 11),
+                  end: FRAMES6.length - 1,
+                }}
+                phase={frames6Phase}
+                style={styles.cat}
+              />
+            </View>
+          </>
+        )}
       </View>
 
       <View style={[styles.inputBar, bottomPad]}>
-        <Text style={styles.inputLabel}>Số giây (để trống = chỉ dừng bằng nút)</Text>
-        <TextInput
-          accessibilityLabel="Số giây chạy animation"
-          editable={!isTalking}
-          keyboardType="decimal-pad"
-          onChangeText={setSecondsText}
-          placeholder="Ví dụ: 3"
-          placeholderTextColor="#9CA3AF"
-          style={styles.input}
-          value={secondsText}
-        />
+        {tabId === 'characters' ? (
+          <>
+            <Text style={styles.inputLabel}>
+              Số giây (để trống = chỉ dừng bằng nút)
+            </Text>
+            <TextInput
+              accessibilityLabel="Số giây chạy animation"
+              editable={!isTalking}
+              keyboardType="decimal-pad"
+              onChangeText={setSecondsText}
+              placeholder="Ví dụ: 3"
+              placeholderTextColor="#9CA3AF"
+              style={styles.input}
+              value={secondsText}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={styles.inputLabel}>
+              Mặc định random 10 frame cuối. Nhập số giây và bấm Submit để random đoạn giữa,
+              hết giờ sẽ quay về 10 frame cuối.
+            </Text>
+            <View style={styles.frames6Controls}>
+              <TextInput
+                accessibilityLabel="Số giây random ở giữa"
+                keyboardType="decimal-pad"
+                onChangeText={setFrames6SecondsText}
+                placeholder="Ví dụ: 3"
+                placeholderTextColor="#9CA3AF"
+                style={[styles.input, styles.frames6Input]}
+                value={frames6SecondsText}
+              />
+              <Pressable
+                accessibilityRole="button"
+                onPress={onSubmitFrames6}
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  pressed && styles.submitButtonPressed,
+                ]}
+              >
+                <Text style={styles.submitButtonText}>Submit</Text>
+              </Pressable>
+            </View>
+          </>
+        )}
       </View>
     </View>
   );
@@ -260,6 +349,32 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     gap: 10,
     paddingVertical: 6,
+  },
+  tabBar: {
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  tabButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+  },
+  tabButtonActive: {
+    borderColor: '#111827',
+    backgroundColor: '#111827',
+  },
+  tabButtonText: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '700',
+  },
+  tabButtonTextActive: {
+    color: '#FFFFFF',
   },
   characterTitle: {
     alignSelf: 'center',
@@ -311,6 +426,28 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#111827',
     backgroundColor: '#FFFFFF',
+  },
+  frames6Controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  frames6Input: {
+    flex: 1,
+  },
+  submitButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 10,
+    backgroundColor: '#111827',
+  },
+  submitButtonPressed: {
+    opacity: 0.85,
+  },
+  submitButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
   },
   stage: {
     alignItems: 'center',
