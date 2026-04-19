@@ -12,8 +12,14 @@ export type RandomRangeAnimatedSpriteProps = {
   frameMs: number;
   /**
    * When true, picks a random index within active range each tick.
+   * Use `randomizeMiddle` / `randomizeEnd` to override per phase; when those
+   * are omitted, this value applies to both phases.
    */
   randomize?: boolean;
+  /** If set, overrides `randomize` while phase is middle (before timed end). */
+  randomizeMiddle?: boolean;
+  /** If set, overrides `randomize` while phase is end. */
+  randomizeEnd?: boolean;
   /**
    * Inclusive index range to random within while playing (phase A).
    */
@@ -64,6 +70,8 @@ function RandomRangeAnimatedSpriteImpl({
   frames,
   frameMs,
   randomize = true,
+  randomizeMiddle,
+  randomizeEnd,
   middleRange,
   endRange,
   phase,
@@ -78,6 +86,7 @@ function RandomRangeAnimatedSpriteImpl({
   const endTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTimedStopNonce = useRef(0);
   const phaseRef = useRef<'middle' | 'end'>('middle');
+  const prevControlledPhaseRef = useRef<typeof phase>(phase);
   const [frame, setFrame] = useState(0);
 
   const safeFrameMs = useMemo(() => {
@@ -128,7 +137,12 @@ function RandomRangeAnimatedSpriteImpl({
             ? clampRange(len, endRange)
             : clampRange(len, middleRange);
 
-        if (!randomize) {
+        const useRandom =
+          phaseRef.current === 'end'
+            ? randomizeEnd ?? randomize
+            : randomizeMiddle ?? randomize;
+
+        if (!useRandom) {
           const next = prev + 1;
           return next > r.end ? r.start : next;
         }
@@ -145,7 +159,17 @@ function RandomRangeAnimatedSpriteImpl({
     return () => {
       clearTimers();
     };
-  }, [clearTimers, endRange, frames.length, isPlaying, middleRange, randomize, safeFrameMs]);
+  }, [
+    clearTimers,
+    endRange,
+    frames.length,
+    isPlaying,
+    middleRange,
+    randomize,
+    randomizeEnd,
+    randomizeMiddle,
+    safeFrameMs,
+  ]);
 
   // Handle transition to end phase after timed stop
   useEffect(() => {
@@ -183,6 +207,32 @@ function RandomRangeAnimatedSpriteImpl({
     if (phase == null) return;
     phaseRef.current = phase;
   }, [phase]);
+
+  // When entering middle phase with sequential playback, start from range start.
+  useEffect(() => {
+    if (phase == null) {
+      prevControlledPhaseRef.current = phase;
+      return;
+    }
+    const prev = prevControlledPhaseRef.current;
+    prevControlledPhaseRef.current = phase;
+    if (phase !== 'middle' || prev === 'middle' || !isPlaying) return;
+
+    const len = frames.length;
+    if (len <= 0) return;
+    const r = clampRange(len, middleRange);
+    const useRandomMiddle = randomizeMiddle ?? randomize;
+    if (useRandomMiddle) return;
+
+    setFrame(r.start);
+  }, [
+    frames.length,
+    isPlaying,
+    middleRange,
+    phase,
+    randomize,
+    randomizeMiddle,
+  ]);
 
   const safeIndex = Math.min(frame, Math.max(frames.length - 1, 0));
 

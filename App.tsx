@@ -26,6 +26,7 @@ import { HUMAN_FRAMES } from './human_png/frames';
 import { ANHDADEN_FRAMES } from './anhdaden/frames';
 import { FRAMES5 } from './frames5/frames';
 import { FRAMES6 } from './frames6/frames';
+import { ONLYMOUTH_FRAMES } from './onlymouth/frames';
 import { RandomRangeAnimatedSprite } from './RandomRangeAnimatedSprite';
 
 type Character = {
@@ -37,6 +38,17 @@ type Character = {
 };
 
 type TabId = 'characters' | 'frames6';
+
+type Frames6Character = {
+  id: string;
+  label: string;
+  frames: readonly any[];
+};
+
+const FRAMES6_CHARACTERS: readonly Frames6Character[] = [
+  { id: 'frames6', label: 'Frames6', frames: FRAMES6 },
+  { id: 'onlymouth', label: 'OnlyMouth', frames: ONLYMOUTH_FRAMES },
+] as const;
 
 const CHARACTERS: readonly Character[] = [
   { id: 'frames3', label: 'Nhân vật 1', buttonLabel: 'NV1', frames: FRAMES3, frameMs: 60 },
@@ -69,11 +81,24 @@ function AppContent() {
   // Frames6 tab state
   const [frames6SecondsText, setFrames6SecondsText] = useState('');
   const [frames6Phase, setFrames6Phase] = useState<'middle' | 'end'>('end');
+  const [frames6CharacterId, setFrames6CharacterId] = useState<string>(
+    FRAMES6_CHARACTERS[0]?.id ?? 'frames6',
+  );
   const frames6MiddleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedCharacter = useMemo(() => {
     return CHARACTERS.find(c => c.id === characterId) ?? CHARACTERS[0];
   }, [characterId]);
+
+  const selectedFrames6Character = useMemo(() => {
+    return FRAMES6_CHARACTERS.find(c => c.id === frames6CharacterId) ?? FRAMES6_CHARACTERS[0];
+  }, [frames6CharacterId]);
+
+  const frames6SequentialEndIndex = useMemo(() => {
+    const len = selectedFrames6Character?.frames?.length ?? 0;
+    if (len <= 0) return 0;
+    return Math.min(len - 1, Math.max(0, Math.floor(len * 0.8) - 1));
+  }, [selectedFrames6Character]);
 
   const clearAutoStopTimer = useCallback(() => {
     if (autoStopTimerRef.current) {
@@ -151,6 +176,16 @@ function AppContent() {
       setTabId(next);
     },
     [clearAutoStopTimer, clearFrames6MiddleTimer, tabId],
+  );
+
+  const onSelectFrames6Character = useCallback(
+    (next: string) => {
+      if (next === frames6CharacterId) return;
+      clearFrames6MiddleTimer();
+      setFrames6Phase('end');
+      setFrames6CharacterId(next);
+    },
+    [clearFrames6MiddleTimer, frames6CharacterId],
   );
 
   const topPad = useMemo(() => ({ paddingTop: safeAreaInsets.top }), [
@@ -261,20 +296,50 @@ function AppContent() {
           </>
         ) : (
           <>
-            <Text style={styles.characterTitle}>Frames6 (random)</Text>
+            <Text style={styles.characterTitle}>Frames6</Text>
+
+            <View style={styles.characterButtons}>
+              {FRAMES6_CHARACTERS.map(c => {
+                const active = c.id === frames6CharacterId;
+                return (
+                  <Pressable
+                    key={c.id}
+                    accessibilityRole="button"
+                    onPress={() => onSelectFrames6Character(c.id)}
+                    style={[
+                      styles.characterButton,
+                      active && styles.characterButtonActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.characterButtonText,
+                        active && styles.characterButtonTextActive,
+                      ]}
+                    >
+                      {c.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
             <View style={styles.stage}>
               <RandomRangeAnimatedSprite
                 isPlaying={tabId === 'frames6'}
-                frames={FRAMES6}
-                frameMs={120}
+                frames={selectedFrames6Character?.frames ?? []}
+                frameMs={60}
+                randomizeMiddle={false}
                 middleRange={{
-                  start: 9,
-                  end: Math.floor(FRAMES6.length * 0.65),
+                  start: 10,
+                  end: frames6SequentialEndIndex,
                 }}
                 endRange={{
-                  start: Math.max(0, FRAMES6.length - 11),
-                  end: FRAMES6.length - 1,
+                  start: Math.max(
+                    0,
+                    (selectedFrames6Character?.frames?.length ?? 0) - 10,
+                  ),
+                  end: (selectedFrames6Character?.frames?.length ?? 1) - 1,
                 }}
                 phase={frames6Phase}
                 style={styles.cat}
@@ -304,8 +369,8 @@ function AppContent() {
         ) : (
           <>
             <Text style={styles.inputLabel}>
-              Mặc định random 10 frame cuối. Nhập số giây và bấm Submit để random đoạn giữa,
-              hết giờ sẽ quay về 10 frame cuối.
+              Mặc định random trong ~10 frame cuối. Nhập số giây và bấm Submit để chạy tuần tự
+              từ đầu tới 80% số frame, hết giờ sẽ quay về đoạn cuối (random).
             </Text>
             <View style={styles.frames6Controls}>
               <TextInput
