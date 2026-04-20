@@ -12,6 +12,7 @@ import { OverviewScreen } from '../screens/OverviewScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
+import { CharacterProvider } from '../characters/CharacterContext';
 import { ProgressProvider } from '../progress/ProgressContext';
 import { theme } from '../theme/theme';
 
@@ -58,11 +59,13 @@ export const RootTabs = memo(function RootTabs() {
   return (
     <GestureHandlerRootView style={styles.flex1}>
       <AuthProvider>
-        <ProgressProvider>
-          <NavigationContainer theme={navTheme}>
-            <RootNavigator insetsBottom={insets.bottom} />
-          </NavigationContainer>
-        </ProgressProvider>
+        <CharacterProvider>
+          <ProgressProvider>
+            <NavigationContainer theme={navTheme}>
+              <RootNavigator insetsBottom={insets.bottom} />
+            </NavigationContainer>
+          </ProgressProvider>
+        </CharacterProvider>
       </AuthProvider>
     </GestureHandlerRootView>
   );

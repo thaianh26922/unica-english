@@ -11,9 +11,9 @@ import Tts from 'react-native-tts';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { Card, PillButton, Screen } from '../components/Ui';
 import { COURSES } from '../data/english';
-import { FRAMES6 } from '../../frames6/frames';
-import { HUMAN1_FRAMES } from '../../human1/frames';
-import { RandomRangeAnimatedSprite } from '../../RandomRangeAnimatedSprite';
+import { useCharacter } from '../characters/CharacterContext';
+import { getCharacterById } from '../characters/characters';
+import { TalkingSprite } from '../components/TalkingSprite';
 import { ensureTts, speak } from '../tts/tts';
 import { useProgress } from '../progress/ProgressContext';
 import { theme } from '../theme/theme';
@@ -25,9 +25,10 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
   const { courseId, lessonId } = route.params;
   const [cardIndex, setCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [spritePhase, setSpritePhase] = useState<'middle' | 'end'>('end');
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isSpeakPending, setIsSpeakPending] = useState(false);
   const { isLessonDone, markLessonDone } = useProgress();
+  const { characterId } = useCharacter();
   const speakSessionRef = useRef(0);
 
   const { course, lesson } = useMemo(() => {
@@ -41,16 +42,7 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
   const card = cards[safeIndex];
   const completed = isLessonDone(courseId, lessonId);
 
-  const spriteFrames = useMemo(() => {
-    // Pick a more "human" sprite for speaking lessons.
-    return courseId === 'daily-speaking' ? HUMAN1_FRAMES : FRAMES6;
-  }, [courseId]);
-
-  const spriteSequentialEndIndex = useMemo(() => {
-    const len = spriteFrames.length;
-    if (len <= 0) return 0;
-    return Math.min(len - 1, Math.max(0, Math.floor(len * 0.8) - 1));
-  }, [spriteFrames.length]);
+  const spriteFrames = useMemo(() => getCharacterById(characterId).frames, [characterId]);
 
   const goPrev = useCallback(() => {
     setIsFlipped(false);
@@ -72,12 +64,12 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
 
   useEffect(() => {
     const onStart = () => {
+      setIsSpeakPending(false);
       setIsSpeaking(true);
-      setSpritePhase('middle');
     };
     const onFinish = () => {
+      setIsSpeakPending(false);
       setIsSpeaking(false);
-      setSpritePhase('end');
       const session = speakSessionRef.current;
       // Only auto-advance if this finish belongs to latest request.
       if (session !== 0) {
@@ -90,8 +82,8 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
       }
     };
     const onCancel = () => {
+      setIsSpeakPending(false);
       setIsSpeaking(false);
-      setSpritePhase('end');
       speakSessionRef.current = 0;
     };
 
@@ -109,6 +101,8 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
     if (!card?.front) return;
     speakSessionRef.current += 1;
     const session = speakSessionRef.current;
+    // Optimistic UI: start animation immediately while TTS engine warms up.
+    setIsSpeakPending(true);
     // Mark this session as the one that should auto-advance on finish.
     await speak(card.front, { language: 'en-US', rate: 0.5 });
     // If immediately cancelled/replaced, keep latest session only.
@@ -122,8 +116,8 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
     } catch {
       // ignore
     }
+    setIsSpeakPending(false);
     setIsSpeaking(false);
-    setSpritePhase('end');
   }, []);
 
   const onPressSpeaker = useCallback(() => {
@@ -170,24 +164,18 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
         <Card style={styles.spriteCard}>
           <View style={styles.spriteRow}>
             <View style={styles.spriteStage}>
-              <RandomRangeAnimatedSprite
-                isPlaying
+              <TalkingSprite
                 frames={spriteFrames}
+                isActive={isSpeaking || isSpeakPending}
                 frameMs={60}
-                randomizeMiddle={false}
-                middleRange={{ start: 10, end: spriteSequentialEndIndex }}
-                endRange={{
-                  start: Math.max(0, spriteFrames.length - 5),
-                  end: Math.max(0, spriteFrames.length - 1),
-                }}
-                phase={spritePhase}
+                endTailCount={5}
                 style={styles.sprite}
               />
             </View>
             <View style={styles.spriteTextCol}>
               <Text style={styles.spriteTitle}>Practice</Text>
               <Text style={styles.spriteSub}>
-                {spritePhase === 'middle' ? 'Speaking…' : 'Ready when you are'}
+                {isSpeaking || isSpeakPending ? 'Speaking…' : 'Ready when you are'}
               </Text>
             </View>
           </View>
