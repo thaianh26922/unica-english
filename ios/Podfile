@@ -30,5 +30,15 @@ target 'unica_english' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    # RNSound references AVAudioSession / AVAudioPlayer but its podspec does not declare
+    # AVFoundation, so the app link step misses those symbols. Append after CocoaPods writes xcconfigs.
+    support_dir = File.join(installer.sandbox.root, 'Target Support Files', 'Pods-unica_english')
+    Dir.glob(File.join(support_dir, '*.xcconfig')).each do |xcconfig_path|
+      text = File.read(xcconfig_path)
+      next if text.include?('AVFoundation')
+      patched = text.gsub(/^OTHER_LDFLAGS = (.+)$/) { "OTHER_LDFLAGS = #{$1} -framework \"AVFoundation\"" }
+      File.write(xcconfig_path, patched) if patched != text
+    end
   end
 end

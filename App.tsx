@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -15,47 +16,26 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import Sound from 'react-native-sound';
 import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { SequenceAnimatedSprite } from './SequenceAnimatedSprite';
-import { FRAMES01 } from './frames01/frames';
-import { FRAMES3 } from './frames3/frames';
-import { HUMAN_FRAMES } from './human_png/frames';
-import { ANHDADEN_FRAMES } from './anhdaden/frames';
-import { FRAMES5 } from './frames5/frames';
+import { resolveBundledAudioUri } from './audio/resolveBundledAudioUri';
+import { AUDIO_TRACKS, type AudioTrack } from './audio/tracks';
 import { FRAMES6 } from './frames6/frames';
-import { ONLYMOUTH_FRAMES } from './onlymouth/frames';
+import { HUMAN1_FRAMES } from './human1/frames';
 import { RandomRangeAnimatedSprite } from './RandomRangeAnimatedSprite';
 
-type Character = {
-  id: string;
-  label: string;
-  buttonLabel: string;
-  frames: readonly any[];
-  frameMs: number;
-};
-
-type TabId = 'characters' | 'frames6';
-
-type Frames6Character = {
+type SpriteCharacter = {
   id: string;
   label: string;
   frames: readonly any[];
 };
 
-const FRAMES6_CHARACTERS: readonly Frames6Character[] = [
+const SPRITE_CHARACTERS: readonly SpriteCharacter[] = [
   { id: 'frames6', label: 'Frames6', frames: FRAMES6 },
-  { id: 'onlymouth', label: 'OnlyMouth', frames: ONLYMOUTH_FRAMES },
-] as const;
-
-const CHARACTERS: readonly Character[] = [
-  { id: 'frames3', label: 'Nhân vật 1', buttonLabel: 'NV1', frames: FRAMES3, frameMs: 60 },
-  { id: 'frames01', label: 'Nhân vật 2', buttonLabel: 'NV2', frames: FRAMES01, frameMs: 60 },
-  { id: 'human', label: 'Human', buttonLabel: 'Human', frames: HUMAN_FRAMES, frameMs: 60 },
-  { id: 'anhdaden', label: 'Anh da den', buttonLabel: 'AnhDD', frames: ANHDADEN_FRAMES, frameMs: 60 },
-  { id: 'frames5', label: 'Frames5', buttonLabel: 'F5', frames: FRAMES5, frameMs: 60 },
+  { id: 'human1', label: 'Human1', frames: HUMAN1_FRAMES },
 ] as const;
 
 function App() {
@@ -71,27 +51,48 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
-  const [tabId, setTabId] = useState<TabId>('characters');
-  const [isTalking, setIsTalking] = useState(false);
-  const [characterId, setCharacterId] = useState<string>(CHARACTERS[0]?.id ?? 'frames3');
-  const [secondsText, setSecondsText] = useState('');
-  const [timedStopNonce, setTimedStopNonce] = useState(0);
-  const autoStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Frames6 tab state
   const [frames6SecondsText, setFrames6SecondsText] = useState('');
   const [frames6Phase, setFrames6Phase] = useState<'middle' | 'end'>('end');
   const [frames6CharacterId, setFrames6CharacterId] = useState<string>(
-    FRAMES6_CHARACTERS[0]?.id ?? 'frames6',
+    SPRITE_CHARACTERS[0]?.id ?? 'frames6',
   );
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const frames6MiddleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeSoundRef = useRef<Sound | null>(null);
+  const playbackSessionRef = useRef(0);
 
-  const selectedCharacter = useMemo(() => {
-    return CHARACTERS.find(c => c.id === characterId) ?? CHARACTERS[0];
-  }, [characterId]);
+  useEffect(() => {
+    Sound.setCategory('Playback');
+  }, []);
+
+  const disposeActiveSound = useCallback(() => {
+    const s = activeSoundRef.current;
+    activeSoundRef.current = null;
+    if (!s) return;
+    try {
+      s.stop(() => {
+        try {
+          s.release();
+        } catch {
+          // ignore
+        }
+      });
+    } catch {
+      try {
+        s.release();
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  const bumpPlaybackSession = useCallback(() => {
+    playbackSessionRef.current += 1;
+    return playbackSessionRef.current;
+  }, []);
 
   const selectedFrames6Character = useMemo(() => {
-    return FRAMES6_CHARACTERS.find(c => c.id === frames6CharacterId) ?? FRAMES6_CHARACTERS[0];
+    return SPRITE_CHARACTERS.find(c => c.id === frames6CharacterId) ?? SPRITE_CHARACTERS[0];
   }, [frames6CharacterId]);
 
   const frames6SequentialEndIndex = useMemo(() => {
@@ -100,13 +101,6 @@ function AppContent() {
     return Math.min(len - 1, Math.max(0, Math.floor(len * 0.8) - 1));
   }, [selectedFrames6Character]);
 
-  const clearAutoStopTimer = useCallback(() => {
-    if (autoStopTimerRef.current) {
-      clearTimeout(autoStopTimerRef.current);
-      autoStopTimerRef.current = null;
-    }
-  }, []);
-
   const clearFrames6MiddleTimer = useCallback(() => {
     if (frames6MiddleTimerRef.current) {
       clearTimeout(frames6MiddleTimerRef.current);
@@ -114,31 +108,18 @@ function AppContent() {
     }
   }, []);
 
-  useEffect(() => () => clearAutoStopTimer(), [clearAutoStopTimer]);
-  useEffect(() => () => clearFrames6MiddleTimer(), [clearFrames6MiddleTimer]);
-
-  const onToggleTalking = useCallback(() => {
-    if (isTalking) {
-      clearAutoStopTimer();
-      setIsTalking(false);
-      return;
-    }
-
-    clearAutoStopTimer();
-    setIsTalking(true);
-
-    const normalized = secondsText.trim().replace(',', '.');
-    const seconds = parseFloat(normalized);
-    if (Number.isFinite(seconds) && seconds > 0) {
-      autoStopTimerRef.current = setTimeout(() => {
-        autoStopTimerRef.current = null;
-        setTimedStopNonce(n => n + 1);
-        setIsTalking(false);
-      }, Math.round(seconds * 1000));
-    }
-  }, [isTalking, secondsText, clearAutoStopTimer]);
+  useEffect(
+    () => () => {
+      clearFrames6MiddleTimer();
+      disposeActiveSound();
+    },
+    [clearFrames6MiddleTimer, disposeActiveSound],
+  );
 
   const onSubmitFrames6 = useCallback(() => {
+    bumpPlaybackSession();
+    disposeActiveSound();
+    setPlayingAudioId(null);
     clearFrames6MiddleTimer();
 
     const normalized = frames6SecondsText.trim().replace(',', '.');
@@ -153,39 +134,73 @@ function AppContent() {
       frames6MiddleTimerRef.current = null;
       setFrames6Phase('end');
     }, Math.round(seconds * 1000));
-  }, [clearFrames6MiddleTimer, frames6SecondsText]);
+  }, [
+    bumpPlaybackSession,
+    clearFrames6MiddleTimer,
+    disposeActiveSound,
+    frames6SecondsText,
+  ]);
 
-  const onSelectCharacter = useCallback(
-    (next: string) => {
-      if (next === characterId) return;
-      clearAutoStopTimer();
-      setIsTalking(false);
-      setCharacterId(next);
-    },
-    [characterId, clearAutoStopTimer],
-  );
-
-  const onSelectTab = useCallback(
-    (next: TabId) => {
-      if (next === tabId) return;
-      // Stop everything when switching tabs to avoid orphan timers.
-      clearAutoStopTimer();
-      setIsTalking(false);
+  const onPlayAudioTrack = useCallback(
+    (track: AudioTrack) => {
+      const session = bumpPlaybackSession();
+      disposeActiveSound();
       clearFrames6MiddleTimer();
-      setFrames6Phase('end');
-      setTabId(next);
+      setFrames6Phase('middle');
+      setPlayingAudioId(track.id);
+
+      const uri = resolveBundledAudioUri(track.source);
+      if (uri == null) {
+        setFrames6Phase('end');
+        setPlayingAudioId(null);
+        return;
+      }
+
+      const snd = new Sound(uri, error => {
+        if (session !== playbackSessionRef.current) {
+          snd.release();
+          return;
+        }
+        if (error) {
+          setFrames6Phase('end');
+          setPlayingAudioId(null);
+          return;
+        }
+        activeSoundRef.current = snd;
+        snd.play(_success => {
+          if (session !== playbackSessionRef.current) {
+            return;
+          }
+          activeSoundRef.current = null;
+          try {
+            snd.release();
+          } catch {
+            // ignore
+          }
+          setPlayingAudioId(null);
+          setFrames6Phase('end');
+        });
+      });
     },
-    [clearAutoStopTimer, clearFrames6MiddleTimer, tabId],
+    [bumpPlaybackSession, clearFrames6MiddleTimer, disposeActiveSound],
   );
 
   const onSelectFrames6Character = useCallback(
     (next: string) => {
       if (next === frames6CharacterId) return;
+      bumpPlaybackSession();
+      disposeActiveSound();
+      setPlayingAudioId(null);
       clearFrames6MiddleTimer();
       setFrames6Phase('end');
       setFrames6CharacterId(next);
     },
-    [clearFrames6MiddleTimer, frames6CharacterId],
+    [
+      bumpPlaybackSession,
+      clearFrames6MiddleTimer,
+      disposeActiveSound,
+      frames6CharacterId,
+    ],
   );
 
   const topPad = useMemo(() => ({ paddingTop: safeAreaInsets.top }), [
@@ -200,201 +215,119 @@ function AppContent() {
   return (
     <View style={[styles.root, topPad]}>
       <View style={styles.main}>
-        <View style={styles.tabBar}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onSelectTab('characters')}
-            style={[
-              styles.tabButton,
-              tabId === 'characters' && styles.tabButtonActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                tabId === 'characters' && styles.tabButtonTextActive,
-              ]}
-            >
-              Characters
-            </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onSelectTab('frames6')}
-            style={[
-              styles.tabButton,
-              tabId === 'frames6' && styles.tabButtonActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.tabButtonText,
-                tabId === 'frames6' && styles.tabButtonTextActive,
-              ]}
-            >
-              Frames6
-            </Text>
-          </Pressable>
+        <Text style={styles.characterTitle}>Nhân vật</Text>
+
+        <View style={styles.characterButtons}>
+          {SPRITE_CHARACTERS.map(c => {
+            const active = c.id === frames6CharacterId;
+            return (
+              <Pressable
+                key={c.id}
+                accessibilityRole="button"
+                onPress={() => onSelectFrames6Character(c.id)}
+                style={[
+                  styles.characterButton,
+                  active && styles.characterButtonActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.characterButtonText,
+                    active && styles.characterButtonTextActive,
+                  ]}
+                >
+                  {c.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {tabId === 'characters' ? (
-          <>
-            <View style={styles.characterBar}>
-              <Text style={styles.characterTitle}>
-                Đang chọn: {selectedCharacter?.label ?? 'Nhân vật'}
-              </Text>
-              <View style={styles.characterButtons}>
-                {CHARACTERS.map(c => {
-                  const active = c.id === characterId;
-                  return (
-                    <Pressable
-                      key={c.id}
-                      accessibilityRole="button"
-                      onPress={() => onSelectCharacter(c.id)}
-                      style={[
-                        styles.characterButton,
-                        active && styles.characterButtonActive,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.characterButtonText,
-                          active && styles.characterButtonTextActive,
-                        ]}
-                      >
-                        {c.buttonLabel}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </View>
-
-            <Pressable
-              accessibilityRole="button"
-              onPress={onToggleTalking}
-              style={({ pressed }) => [
-                styles.button,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Text style={styles.buttonText}>
-                {isTalking ? 'Stop talking' : 'Start talking'}
-              </Text>
-            </Pressable>
-
-            <View style={styles.stage}>
-              <SequenceAnimatedSprite
-                isPlaying={isTalking}
-                frames={selectedCharacter?.frames ?? []}
-                frameMs={selectedCharacter?.frameMs ?? 60}
-                timedStopNonce={timedStopNonce}
-                style={styles.cat}
-                stopMode="finishLoopThenFirst"
-              />
-            </View>
-          </>
-        ) : (
-          <>
-            <Text style={styles.characterTitle}>Frames6</Text>
-
-            <View style={styles.characterButtons}>
-              {FRAMES6_CHARACTERS.map(c => {
-                const active = c.id === frames6CharacterId;
-                return (
-                  <Pressable
-                    key={c.id}
-                    accessibilityRole="button"
-                    onPress={() => onSelectFrames6Character(c.id)}
-                    style={[
-                      styles.characterButton,
-                      active && styles.characterButtonActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.characterButtonText,
-                        active && styles.characterButtonTextActive,
-                      ]}
-                    >
-                      {c.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={styles.stage}>
-              <RandomRangeAnimatedSprite
-                isPlaying={tabId === 'frames6'}
-                frames={selectedFrames6Character?.frames ?? []}
-                frameMs={60}
-                randomizeMiddle={false}
-                middleRange={{
-                  start: 10,
-                  end: frames6SequentialEndIndex,
-                }}
-                endRange={{
-                  start: Math.max(
-                    0,
-                    (selectedFrames6Character?.frames?.length ?? 0) - 10,
-                  ),
-                  end: (selectedFrames6Character?.frames?.length ?? 1) - 1,
-                }}
-                phase={frames6Phase}
-                style={styles.cat}
-              />
-            </View>
-          </>
-        )}
+        <View style={styles.stage}>
+          <RandomRangeAnimatedSprite
+            isPlaying
+            frames={selectedFrames6Character?.frames ?? []}
+            frameMs={60}
+            randomizeMiddle={false}
+            middleRange={{
+              start: 10,
+              end: frames6SequentialEndIndex,
+            }}
+            endRange={{
+              start: Math.max(
+                0,
+                (selectedFrames6Character?.frames?.length ?? 0) - 5,
+              ),
+              end: (selectedFrames6Character?.frames?.length ?? 1) - 1,
+            }}
+            phase={frames6Phase}
+            style={styles.cat}
+          />
+        </View>
       </View>
 
       <View style={[styles.inputBar, bottomPad]}>
-        {tabId === 'characters' ? (
-          <>
-            <Text style={styles.inputLabel}>
-              Số giây (để trống = chỉ dừng bằng nút)
-            </Text>
-            <TextInput
-              accessibilityLabel="Số giây chạy animation"
-              editable={!isTalking}
-              keyboardType="decimal-pad"
-              onChangeText={setSecondsText}
-              placeholder="Ví dụ: 3"
-              placeholderTextColor="#9CA3AF"
-              style={styles.input}
-              value={secondsText}
-            />
-          </>
-        ) : (
-          <>
-            <Text style={styles.inputLabel}>
-              Mặc định random trong ~10 frame cuối. Nhập số giây và bấm Submit để chạy tuần tự
-              từ đầu tới 80% số frame, hết giờ sẽ quay về đoạn cuối (random).
-            </Text>
-            <View style={styles.frames6Controls}>
-              <TextInput
-                accessibilityLabel="Số giây random ở giữa"
-                keyboardType="decimal-pad"
-                onChangeText={setFrames6SecondsText}
-                placeholder="Ví dụ: 3"
-                placeholderTextColor="#9CA3AF"
-                style={[styles.input, styles.frames6Input]}
-                value={frames6SecondsText}
-              />
+        <Text style={styles.inputLabel}>
+          Mặc định random trong ~5 frame cuối. Nhập số giây và bấm Submit, hoặc bấm Play một file
+          audio: animation chạy tuần tự (middle) trong lúc đó; hết thời gian hoặc hết audio thì quay về
+          đoạn cuối (random) như nhau.
+        </Text>
+        <View style={styles.frames6Controls}>
+          <TextInput
+            accessibilityLabel="Số giây random ở giữa"
+            keyboardType="decimal-pad"
+            onChangeText={setFrames6SecondsText}
+            placeholder="Ví dụ: 3"
+            placeholderTextColor="#9CA3AF"
+            style={[styles.input, styles.frames6Input]}
+            value={frames6SecondsText}
+          />
+          <Pressable
+            accessibilityRole="button"
+            onPress={onSubmitFrames6}
+            style={({ pressed }) => [
+              styles.submitButton,
+              pressed && styles.submitButtonPressed,
+            ]}
+          >
+            <Text style={styles.submitButtonText}>Submit</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.audioSectionLabel}>Audio</Text>
+        <ScrollView
+          horizontal
+          contentContainerStyle={styles.audioRow}
+          keyboardShouldPersistTaps="handled"
+          showsHorizontalScrollIndicator={false}
+        >
+          {AUDIO_TRACKS.map(track => {
+            const isPlaying = playingAudioId === track.id;
+            return (
               <Pressable
+                key={track.id}
+                accessibilityLabel={`Phát ${track.label}`}
                 accessibilityRole="button"
-                onPress={onSubmitFrames6}
+                onPress={() => onPlayAudioTrack(track)}
                 style={({ pressed }) => [
-                  styles.submitButton,
-                  pressed && styles.submitButtonPressed,
+                  styles.audioPlayButton,
+                  isPlaying && styles.audioPlayButtonActive,
+                  pressed && styles.audioPlayButtonPressed,
                 ]}
               >
-                <Text style={styles.submitButtonText}>Submit</Text>
+                <Text
+                  style={[
+                    styles.audioPlayButtonText,
+                    isPlaying && styles.audioPlayButtonTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {isPlaying ? 'Đang phát…' : `Play ${track.label}`}
+                </Text>
               </Pressable>
-            </View>
-          </>
-        )}
+            );
+          })}
+        </ScrollView>
       </View>
     </View>
   );
@@ -409,37 +342,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     gap: 16,
-  },
-  characterBar: {
-    alignSelf: 'stretch',
-    gap: 10,
-    paddingVertical: 6,
-  },
-  tabBar: {
-    alignSelf: 'center',
-    flexDirection: 'row',
-    gap: 10,
-    paddingVertical: 6,
-  },
-  tabButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
-  },
-  tabButtonActive: {
-    borderColor: '#111827',
-    backgroundColor: '#111827',
-  },
-  tabButtonText: {
-    fontSize: 13,
-    color: '#111827',
-    fontWeight: '700',
-  },
-  tabButtonTextActive: {
-    color: '#FFFFFF',
   },
   characterTitle: {
     alignSelf: 'center',
@@ -514,37 +416,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  audioSectionLabel: {
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  audioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 4,
+  },
+  audioPlayButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    maxWidth: 220,
+  },
+  audioPlayButtonActive: {
+    borderColor: '#111827',
+    backgroundColor: '#F3F4F6',
+  },
+  audioPlayButtonPressed: {
+    opacity: 0.9,
+  },
+  audioPlayButtonText: {
+    fontSize: 13,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  audioPlayButtonTextActive: {
+    color: '#111827',
+  },
   stage: {
     alignItems: 'center',
     gap: 10,
     paddingBottom: 18,
   },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
   cat: {
     width: 260,
     height: 260,
-  },
-  caption: {
-    fontSize: 14,
-    opacity: 0.8,
-  },
-  button: {
-    alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: '#111827',
-  },
-  buttonPressed: {
-    opacity: 0.85,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 
