@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,12 +7,14 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { AudioPlayer } from '../components/AudioPlayer';
+import Tts from 'react-native-tts';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import { Card, PillButton, Screen } from '../components/Ui';
 import { COURSES } from '../data/english';
 import { FRAMES6 } from '../../frames6/frames';
 import { HUMAN1_FRAMES } from '../../human1/frames';
 import { RandomRangeAnimatedSprite } from '../../RandomRangeAnimatedSprite';
+import { ensureTts, speak } from '../tts/tts';
 import { useProgress } from '../progress/ProgressContext';
 import { theme } from '../theme/theme';
 import type { CourseStackParamList } from '../navigation/types';
@@ -24,7 +26,9 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
   const [cardIndex, setCardIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [spritePhase, setSpritePhase] = useState<'middle' | 'end'>('end');
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const { isLessonDone, markLessonDone } = useProgress();
+  const speakSessionRef = useRef(0);
 
   const { course, lesson } = useMemo(() => {
     const c = COURSES.find(x => x.id === courseId) ?? null;
@@ -61,6 +65,74 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
   const onMarkComplete = useCallback(() => {
     markLessonDone(courseId, lessonId);
   }, [courseId, lessonId, markLessonDone]);
+
+  useEffect(() => {
+    ensureTts();
+  }, []);
+
+  useEffect(() => {
+    const onStart = () => {
+      setIsSpeaking(true);
+      setSpritePhase('middle');
+    };
+    const onFinish = () => {
+      setIsSpeaking(false);
+      setSpritePhase('end');
+      const session = speakSessionRef.current;
+      // Only auto-advance if this finish belongs to latest request.
+      if (session !== 0) {
+        speakSessionRef.current = 0;
+        if (safeIndex >= cards.length - 1) {
+          onMarkComplete();
+        } else {
+          goNext();
+        }
+      }
+    };
+    const onCancel = () => {
+      setIsSpeaking(false);
+      setSpritePhase('end');
+      speakSessionRef.current = 0;
+    };
+
+    const subStart = (Tts as any).addEventListener('tts-start', onStart);
+    const subFinish = (Tts as any).addEventListener('tts-finish', onFinish);
+    const subCancel = (Tts as any).addEventListener('tts-cancel', onCancel);
+    return () => {
+      subStart?.remove?.();
+      subFinish?.remove?.();
+      subCancel?.remove?.();
+    };
+  }, [cards.length, goNext, onMarkComplete, safeIndex]);
+
+  const onSpeakPhrase = useCallback(async () => {
+    if (!card?.front) return;
+    speakSessionRef.current += 1;
+    const session = speakSessionRef.current;
+    // Mark this session as the one that should auto-advance on finish.
+    await speak(card.front, { language: 'en-US', rate: 0.5 });
+    // If immediately cancelled/replaced, keep latest session only.
+    if (session !== speakSessionRef.current) return;
+  }, [card?.front]);
+
+  const onStopSpeaking = useCallback(async () => {
+    speakSessionRef.current = 0;
+    try {
+      await Tts.stop();
+    } catch {
+      // ignore
+    }
+    setIsSpeaking(false);
+    setSpritePhase('end');
+  }, []);
+
+  const onPressSpeaker = useCallback(() => {
+    if (isSpeaking) {
+      onStopSpeaking();
+      return;
+    }
+    onSpeakPhrase();
+  }, [isSpeaking, onSpeakPhrase, onStopSpeaking]);
 
   if (!course || !lesson) {
     return (
@@ -115,7 +187,7 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
             <View style={styles.spriteTextCol}>
               <Text style={styles.spriteTitle}>Practice</Text>
               <Text style={styles.spriteSub}>
-                {spritePhase === 'middle' ? 'Listening… repeat after audio' : 'Ready when you are'}
+                {spritePhase === 'middle' ? 'Speaking…' : 'Ready when you are'}
               </Text>
             </View>
           </View>
@@ -128,7 +200,30 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
             style={({ pressed }) => [styles.flashCardInner, pressed && { opacity: 0.95 }]}
           >
             <Text style={styles.cardLabel}>{isFlipped ? 'Meaning' : 'Phrase'}</Text>
-            <Text style={styles.cardMain}>{isFlipped ? card?.back : card?.front}</Text>
+            <View style={styles.phraseRow}>
+              <View style={styles.flex1}>
+                <Text style={styles.cardMain}>{isFlipped ? card?.back : card?.front}</Text>
+              </View>
+              {!isFlipped ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={isSpeaking ? 'Stop speaking' : 'Speak phrase'}
+                  onPress={onPressSpeaker}
+                  hitSlop={10}
+                  style={({ pressed }) => [
+                    styles.speakerButton,
+                    pressed && { opacity: 0.9 },
+                    isSpeaking && styles.speakerButtonActive,
+                  ]}
+                >
+                  <Ionicons
+                    name={isSpeaking ? 'stop-circle-outline' : 'volume-high-outline'}
+                    size={22}
+                    color={isSpeaking ? '#111827' : theme.colors.primary}
+                  />
+                </Pressable>
+              ) : null}
+            </View>
             {card?.example ? (
               <Text style={styles.cardExample} numberOfLines={2}>
                 {card.example}
@@ -137,25 +232,6 @@ export const LessonScreen = memo(function LessonScreen({ route, navigation }: Pr
             <Text style={styles.tapHint}>Tap to flip</Text>
           </Pressable>
         </Card>
-
-        {card?.audioTrackId ? (
-          <Card style={styles.audioCard}>
-            <Text style={styles.audioTitle}>Listening</Text>
-            <Text style={styles.audioSub}>Play the sample audio, then repeat.</Text>
-            <AudioPlayer
-              trackId={card.audioTrackId}
-              onPlayingChange={isPlaying => setSpritePhase(isPlaying ? 'middle' : 'end')}
-              onEnded={() => {
-                // When audio ends, advance like finishing a timed step.
-                if (safeIndex >= cards.length - 1) {
-                  onMarkComplete();
-                } else {
-                  goNext();
-                }
-              }}
-            />
-          </Card>
-        ) : null}
 
         <View style={styles.controlsRow}>
           <PillButton label="Prev" onPress={goPrev} variant="ghost" style={styles.ctrlBtn} />
@@ -217,9 +293,7 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 22,
-    backgroundColor: '#D7ECFF',
-    borderWidth: 1,
-    borderColor: '#CFE5FF',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -232,11 +306,24 @@ const styles = StyleSheet.create({
   flashCardInner: { padding: 18, gap: 10 },
   cardLabel: { fontSize: 12, fontWeight: '900', color: theme.colors.primary },
   cardMain: { fontSize: 22, fontWeight: '900', color: theme.colors.text },
+  phraseRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  speakerButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 14,
+    backgroundColor: theme.colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speakerButtonActive: {
+    backgroundColor: '#F3F4F6',
+  },
   cardExample: { fontSize: 13, fontWeight: '700', color: theme.colors.textMuted },
   tapHint: { marginTop: 10, fontSize: 12, fontWeight: '700', color: '#94A3B8' },
-  audioCard: { padding: 16, gap: 8 },
-  audioTitle: { fontSize: 14, fontWeight: '900', color: theme.colors.text },
-  audioSub: { fontSize: 12, fontWeight: '700', color: theme.colors.textMuted },
   controlsRow: { flexDirection: 'row', gap: 12 },
   ctrlBtn: { flex: 1 },
   completeCard: { padding: 16, gap: 10 },
