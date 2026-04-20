@@ -7,9 +7,11 @@ import { enableScreens } from 'react-native-screens';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { CourseStack } from './CourseStack';
+import { AuthStack } from './AuthStack';
 import { OverviewScreen } from '../screens/OverviewScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { AuthProvider, useAuth } from '../auth/AuthContext';
 import { ProgressProvider } from '../progress/ProgressContext';
 import { theme } from '../theme/theme';
 
@@ -55,65 +57,52 @@ export const RootTabs = memo(function RootTabs() {
 
   return (
     <GestureHandlerRootView style={styles.flex1}>
-      <ProgressProvider>
-        <NavigationContainer theme={navTheme}>
-          <Tab.Navigator
-            screenOptions={{
-              headerShown: false,
-              tabBarShowLabel: false,
-              tabBarStyle: {
-                height: 72 + insets.bottom,
-                paddingBottom: Math.max(insets.bottom, 10),
-                paddingTop: 10,
-                paddingHorizontal: 14,
-                borderTopWidth: 0,
-                borderTopColor: 'transparent',
-                backgroundColor: theme.colors.surface,
-                borderTopLeftRadius: 26,
-                borderTopRightRadius: 26,
-                shadowColor: '#000',
-                shadowOpacity: 0.06,
-                shadowRadius: 10,
-                shadowOffset: { width: 0, height: -2 },
-                elevation: 6,
-              },
-              tabBarItemStyle: { paddingVertical: 8 },
-              tabBarActiveTintColor: theme.colors.primary,
-              tabBarInactiveTintColor: '#CBD5E1',
-            }}
-          >
-            <Tab.Screen
-              name="home"
-              component={CourseStack}
-              options={{
-                tabBarIcon: HomeTabBarIcon,
-              }}
-            />
-            <Tab.Screen
-              name="learn"
-              component={OverviewScreen}
-              options={{
-                tabBarIcon: LearnTabBarIcon,
-              }}
-            />
-            <Tab.Screen
-              name="docs"
-              component={SearchScreen}
-              options={{
-                tabBarIcon: DocsTabBarIcon,
-              }}
-            />
-            <Tab.Screen
-              name="profile"
-              component={ProfileScreen}
-              options={{
-                tabBarIcon: ProfileTabBarIcon,
-              }}
-            />
-          </Tab.Navigator>
-        </NavigationContainer>
-      </ProgressProvider>
+      <AuthProvider>
+        <ProgressProvider>
+          <NavigationContainer theme={navTheme}>
+            <RootNavigator insetsBottom={insets.bottom} />
+          </NavigationContainer>
+        </ProgressProvider>
+      </AuthProvider>
     </GestureHandlerRootView>
+  );
+});
+
+const RootNavigator = memo(function RootNavigator({ insetsBottom }: { insetsBottom: number }) {
+  const { user } = useAuth();
+  if (!user) return <AuthStack />;
+
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarStyle: {
+          height: 72 + insetsBottom,
+          paddingBottom: Math.max(insetsBottom, 10),
+          paddingTop: 10,
+          paddingHorizontal: 14,
+          borderTopWidth: 0,
+          borderTopColor: 'transparent',
+          backgroundColor: theme.colors.surface,
+          borderTopLeftRadius: 26,
+          borderTopRightRadius: 26,
+          shadowColor: '#000',
+          shadowOpacity: 0.06,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: -2 },
+          elevation: 6,
+        },
+        tabBarItemStyle: { paddingVertical: 8 },
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: '#CBD5E1',
+      }}
+    >
+      <Tab.Screen name="home" component={CourseStack} options={{ tabBarIcon: HomeTabBarIcon }} />
+      <Tab.Screen name="learn" component={OverviewScreen} options={{ tabBarIcon: LearnTabBarIcon }} />
+      <Tab.Screen name="docs" component={SearchScreen} options={{ tabBarIcon: DocsTabBarIcon }} />
+      <Tab.Screen name="profile" component={ProfileScreen} options={{ tabBarIcon: ProfileTabBarIcon }} />
+    </Tab.Navigator>
   );
 });
 
